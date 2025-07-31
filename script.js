@@ -3,7 +3,7 @@ import { GLTFLoader } from 'https://cdn.jsdelivr.net/npm/three@0.160.1/examples/
 
 const video = document.getElementById('video');
 
-// Initialize camera
+// Setup webcam
 async function initCamera() {
   const stream = await navigator.mediaDevices.getUserMedia({
     video: { facingMode: 'user', width: 640, height: 480 },
@@ -14,9 +14,11 @@ async function initCamera() {
 }
 await initCamera();
 
-// Set up THREE.js
+// Setup Three.js
 const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 100);
+const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 100);
+camera.position.z = 2;
+
 const renderer = new THREE.WebGLRenderer({ alpha: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
 document.body.appendChild(renderer.domElement);
@@ -26,7 +28,7 @@ const light = new THREE.DirectionalLight(0xffffff, 1);
 light.position.set(0, 1, 2);
 scene.add(light);
 
-// Load 3D Glasses model
+// Load glasses model
 let glassesModel;
 const loader = new GLTFLoader();
 loader.load('./assets/glasses.glb', (gltf) => {
@@ -35,36 +37,39 @@ loader.load('./assets/glasses.glb', (gltf) => {
   scene.add(glassesModel);
 });
 
-// MediaPipe: Use from global scope (from script tag)
+// MediaPipe FaceMesh from window object
 const faceMesh = new window.FaceMesh({
-  locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`
+  locateFile: (file) =>
+    `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`,
 });
 faceMesh.setOptions({
   maxNumFaces: 1,
   refineLandmarks: true,
   minDetectionConfidence: 0.5,
-  minTrackingConfidence: 0.5
+  minTrackingConfidence: 0.5,
 });
 faceMesh.onResults(onResults);
 
-// MediaPipe camera
+// Camera for FaceMesh
 const mpCamera = new window.Camera(video, {
-  onFrame: async () => await faceMesh.send({ image: video }),
+  onFrame: async () => {
+    await faceMesh.send({ image: video });
+  },
   width: 640,
-  height: 480
+  height: 480,
 });
 mpCamera.start();
 
-// Face tracking handler
+// Update glasses on landmarks
 function onResults(results) {
   if (!glassesModel || results.multiFaceLandmarks.length === 0) return;
   const landmarks = results.multiFaceLandmarks[0];
-  const left = landmarks[263];
-  const right = landmarks[33];
+  const leftEye = landmarks[263];
+  const rightEye = landmarks[33];
 
-  const centerX = (left.x + right.x) / 2;
-  const centerY = (left.y + right.y) / 2;
-  const centerZ = (left.z + right.z) / 2;
+  const centerX = (leftEye.x + rightEye.x) / 2;
+  const centerY = (leftEye.y + rightEye.y) / 2;
+  const centerZ = (leftEye.z + rightEye.z) / 2;
 
   glassesModel.position.set(
     (centerX - 0.5) * 2,
@@ -72,8 +77,8 @@ function onResults(results) {
     -centerZ - 1.5
   );
 
-  const dx = (left.x - right.x);
-  const dy = (left.y - right.y);
+  const dx = leftEye.x - rightEye.x;
+  const dy = leftEye.y - rightEye.y;
   const dist = Math.sqrt(dx * dx + dy * dy);
   const scale = dist * 6;
   glassesModel.scale.set(scale, scale, scale);
